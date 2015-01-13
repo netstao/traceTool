@@ -4,6 +4,7 @@ http.createServer(function (request, response) {
 
     response.writeHead(200, { 'Content-Type': 'text/plain' });
     request.on('data', function (chunk) {
+        console.log(chunk);
         response.write(chunk);
     });
     var timer = null;
@@ -11,7 +12,7 @@ http.createServer(function (request, response) {
         timer = setTimeout(function(){
 
         },300);
-        console.log(new Date().getTime()+Math.random()*1000,request.url);
+        console.log(new Date().getTime()+Math.random()*1000,request.url.toString());
         response.end('test');
         clearTimeout(timer);
 

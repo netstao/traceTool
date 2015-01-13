@@ -2,19 +2,29 @@ var cluster = require('cluster');
 var http = require('http');
 var Getopt = require('node-getopt');
 var fs = require('fs');
+var net = require('net');
 getopt = new Getopt([
     ['s' , '' , ' -s [server]. ep: -s 127.0.0.1/click  default  click'],
     ['t'  , '' , ' -t [time]. ep: -t 1 default 1 hour'],
-    ['p'  , '' , ' -p [port]. ep: -p 8007 default 80']
+    ['p'  , '' , ' -p [port]. ep: -p 8007 default 80'],
+    ['h'  , '' , ' -h [help]. ep: -h show help'],
+    ['c'  , '' , ' -c [concurrent]. ep: -c 1000']
 ]);
 getopt.bindHelp().parseSystem();
 opt = getopt.parse(process.argv.slice(2));
+if(opt.options.h){
+    getopt.showHelp();
+    process.exit(0);
+}
 global.workers = {};
+global.bytes = 0;
 if(opt.options.s && opt.options.t){
 
-    var server = opt.argv[0];  //server
-    var time = parseFloat(opt.argv[1]);  //持续时间 默认一小时
-    var port = parseInt(opt.argv[2]);  //端口
+    var server = opt.argv[0];       //server
+    var port = parseInt(opt.argv[2]);    //端口
+    var time = parseFloat(opt.argv[1]);    //持续时间 默认一小时
+    var concurrent = parseInt(opt.argv[3]); //并发
+    concurrent ? concurrent : (concurrent = 100);
 
     var action = server.split('/')[1];
     typeof action == 'undefined' || action =='' ? action = 'click':action;
@@ -53,17 +63,16 @@ if(opt.options.s && opt.options.t){
                 while (index > -1) {
                     var line = remaining.substring(20, index);
                     remaining = remaining.substring(index + 1);
-
                     index = remaining.indexOf('\n');
                 }
                 function send_child(line){
                     var random_num = parseInt(Math.random()*4);
                     //随机发送给子进程处理
-                    workers[random_num].send({url:encodeURI('/'+action+'?'+line+'&random='+random_num
-
-                    )});
+                    workers[random_num].send({url:encodeURI('/'+action+'?'+line+'&random='+random_num)});
                 }
+
                 setTimeout(send_child,1,line);
+
 
             });
 
@@ -79,6 +88,7 @@ if(opt.options.s && opt.options.t){
         }
         var logs = fs.createReadStream('./log/'+action+'.log',{flags:'r',encoding:'utf8'});
         readLines(logs, func);
+
 
     } else if (cluster.isWorker) {
 
@@ -102,7 +112,13 @@ if(opt.options.s && opt.options.t){
         /*接受父进程消息*/
         process.on('message',function(data){
             options.path=data.url+'&pid='+process.pid;
-            setTimeout(startClient, 100,options);
+            //setTimeout(startSocketClient, 1,options);
+            //for(var i =0; i<1 ; i++){
+            //    startSocketClient(options);
+            //
+            //}
+           // startClient(options);
+            startSocketClient(options)
         });
 
         var getHttpGlobalAgentQueueLength = function () {
@@ -110,25 +126,23 @@ if(opt.options.s && opt.options.t){
             Object.keys(http.globalAgent.requests).forEach(function (name) {
                 num += http.globalAgent.requests[name].length;
             });
-            console.log('进程pid:'+process.pid,'请求队列:'+num);
+            console.log('进程pid:'+process.pid,'http请求队列:'+num);
         };
-        setInterval(getHttpGlobalAgentQueueLength,3000);
+        setInterval(getHttpGlobalAgentQueueLength,5000);
 
         console.log('[worker] ' + process.pid + "start worker ..." + cluster.worker.id);
 
-        //发起请求
+        //发起http请求
         function startClient(options) {
             // send off a bunch of concurrent requests
-            // TODO make configurable
+            // 压测时间是否过期
+            var end_time = new Date().getTime()/1000;
+            if(parseInt(end_time-start_time)>=time*3600){
+                console.log(process.pid + ' exit');
+                process.exit(0);
+            }
             sendRequest();
             function sendRequest() {
-                //console.log(options);
-                var end_time = new Date().getTime()/1000;
-                //console.log(parseInt(end_time-start_time)>time*3600);
-                if(parseInt(end_time-start_time)>=time*3600){
-                    console.log(process.pid + ' exit');
-                    process.exit(0);
-                }
                 var req = http.request(options, onConnection);
                 req.setSocketKeepAlive(true,3000);
                 req.on('error', onError);
@@ -156,7 +170,72 @@ if(opt.options.s && opt.options.t){
             }
         }
 
+        //发起socket http请求
+        function startSocketClient(options){
+            // send off a bunch of concurrent requests
+            // 压测时间是否过期
+            var end_time = new Date().getTime()/1000;
+            if(parseInt(end_time-start_time)>=time*3600){
+                console.log(process.pid + ' exit');
+                process.exit(0);
+            }
+            sendRequest();
+           // console.log({port: options.port,host:options.hostname});
+            function sendRequest() {
+                var client = net.connect(
+                    {port: options.port, host:options.hostname},
+                    function() { //'connect' 监听器
+                       //console.log('client connected success');
+                        var data = "GET "+ options.path+" HTTP/1.1\r\n"+
+                            "Host: "+options.hostname+"\r\n"+
+                            "Connection: keep-alive\r\n"+
+                            "Accept: text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8\r\n"+
+                            "User-Agent: Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/34.0.1847.116 Safari/537.36\r\n\r\n";
+                        //console.log(data);
+                            client.write(data,'utf8',function(){
+                               bytes+=client.bytesWritten;
+                                //client.destroy();
+                            });
+                    });
+                client.on('data', function(data) {
+                    //console.log(data.toString());
+                    //client.end(data.toString());
+                });
+                client.on('close',function(err){
+                    //console.log(err);
+                });
+                client.on('end', function() {
+                    console.log('客户端断开连接');
+                });
+                client.on('error', onError);
+            }
+            // add a little back-off to prevent EADDRNOTAVAIL errors, it's pretty easy
+            // to exhaust the available port range
+            function relaxedSendRequest() {
+                setTimeout(sendRequest, 1);
+            }
 
+            function onConnection(res) {
+                res.on('error', onError);
+                res.on('data', onData);
+                res.on('end', relaxedSendRequest);
+            }
+
+            function onError(err) {
+                console.error(err.stack);
+                relaxedSendRequest();
+            }
+
+            function onData(data) {
+                // this space intentionally left blank
+            }
+        }
+
+        if(cluster.isMaster) {
+            setInterval(function () {
+                console.log('总socket 字节数:' + bytes);
+            }, 5000);
+        }
         //ctrl+c事件中断
         process.on('SIGINT', function() {
             console.log('收到 SIGINT 信号。  ');
@@ -172,4 +251,5 @@ if(opt.options.s && opt.options.t){
     getopt.showHelp();
     process.exit(0);
 }
+
 
