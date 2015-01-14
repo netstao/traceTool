@@ -5,9 +5,9 @@ var fs = require('fs');
 var net = require('net');
 var em = require('events').EventEmitter;
 getopt = new Getopt([
-    ['s' , '' , ' -s [server]. ep: -s 127.0.0.1/click  default  click'],
+    ['s' , '' , ' -s [server]. ep: -s 127.0.0.1/action  default  action'],
     ['t'  , '' , ' -t [time]. ep: -t 1 default 1 hour'],
-    ['p'  , '' , ' -p [port]. ep: -p 8007 default 80'],
+    ['p'  , '' , ' -p [port]. ep: -p 1234 default 80'],
     ['h'  , '' , ' -h [help]. ep: -h show help'],
     ['c'  , '' , ' -c [concurrent]. ep: -c 1000']
 ]);
@@ -29,7 +29,7 @@ if(opt.options.s && opt.options.t){
     var file_content = [];
 
     var action = server.split('/')[1];
-    typeof action == 'undefined' || action =='' ? action = 'click':action;
+    typeof action == 'undefined' || action =='' ? action = 'action':action;
     var start_time  = new Date().getTime()/1000;
 
     var options = {
