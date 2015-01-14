@@ -7,6 +7,9 @@ http.createServer(function (request, response) {
         console.log(chunk);
         response.write(chunk);
     });
+    request.on('error',function(err){
+        console.log(err);
+    });
     var timer = null;
     request.on('end', function () {
         timer = setTimeout(function(){
