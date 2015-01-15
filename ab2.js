@@ -211,7 +211,7 @@ if(opt.options.s && opt.options.t){
         }
         //ctrl+c事件中断
         process.on('SIGINT', function(){
-            console.log('收到 SIGINT 信号。  ');
+            console.log('收到 SIGINT 信号。 exit ');
             process.exit(0);
         });
         process.on('uncaughtException', function(err) {
